@@ -1,22 +1,79 @@
-from flask import Flask, render_template, flash, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, session
+from flask_socketio import join_room, leave_room, send, SocketIO
+import random
+from string import ascii_uppercase
 
 def create_app():
     # create a flask instance
     app = Flask(__name__)
     # secret key
     app.config['SECRET_KEY'] = 'fdsi12fer32f28h6sgfw2gt75'
+    socketio = SocketIO(app)
+
+    rooms = {}
+
+    def generate_unique_code(length):
+        while True:
+            code = ''
+            for i in range(length):
+                code += random.choice(ascii_uppercase)
+
+            if code not in rooms:
+                break
+
+        return code
+
+    @app.route('/', methods=['GET', 'POST'])
+    def home():
+        # user cant get back the room using url after navigate to home page
+        session.clear()
+        if request.method == 'POST':
+            name = request.form.get('name')
+            code = request.form.get('code')
+            # set default value as False if not receive join and create
+            join = request.form.get('join', False)
+            create = request.form.get('create', False)
+
+            if not name:
+                context = {
+                    'error': 'Please enter a name', 
+                    'code': code,
+                    'name': name
+                }
+                return render_template('home.html', **context)
+            
+            if join != False and not code:
+                context = {
+                    'error': 'Please enter a room code', 
+                    'code': code,
+                    'name': name
+                }
+                return render_template('home.html', **context)
+            
+            room = code
+            if create != False:
+                room = generate_unique_code(4)
+                rooms[room] = {'members': 0, 'messages': []}
+            elif code not in rooms:
+                context = {
+                    'error': 'Room does not exist', 
+                    'code': code,
+                    'name': name
+                }
+                return render_template('home.html', **context)
+            
+            session['room'] = room
+            session['name'] = name
+            return redirect(url_for('room'))
+
+        return render_template('home.html')
     
+    @app.route('/room')
+    def room():
+        room = session.get('room')
+        if room is None or session.get('name') is None or room not in rooms:
+            return redirect(url_for('home'))
+        
+        return render_template('room.html')
 
-    # custom error pages
-
-    # invalid url
-    @app.errorhandler(404)
-    def page_not_found(e):
-        return render_template('error/404.html'), 404
-
-    # internal server error
-    @app.errorhandler(500)
-    def internal_server_error(e):
-        return render_template('error/500.html'), 500
-    
     return app
